@@ -1,0 +1,8 @@
+*.mat
+*.pyc
+*.mat
+.idea
+*.jar
+.ipynb_checkpoints
+test/input
+test/output
