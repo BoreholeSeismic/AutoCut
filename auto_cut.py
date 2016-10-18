@@ -72,9 +72,7 @@ class AutoCut(object):
         # single trace trigger detection. trigger_windows[noTrace][list_pos] stores triggered positions
         for i_trace in range(traces_info.noTrace):
             rolstd = pd.rolling_std(data[:, i_trace], window=300)
-        #     TODO better std_silent sampling, try median of median
-            rolstd_nonan = rolstd[~np.isnan(rolstd)]
-            std_silent = np.nanmean(rolstd_nonan[:400])
+            std_silent = self.get_std_silent(rolstd)
             trigger_windows.append(np.where(rolstd > 4 * std_silent)[0])
 
         # Multi-trace collaborative filtering.
@@ -98,6 +96,22 @@ class AutoCut(object):
         signal_window = list(signal_window)
         signal_window.sort()
         return signal_window
+
+    def get_std_silent(self, rolstd):
+        rolstd_nonan = rolstd[~np.isnan(rolstd)]
+        # (1) naive method
+        std_silent = np.mean(rolstd_nonan[:400])
+        # (2) discard the top 1%. But not accurate.
+        # df = pd.Series(rolstd_nonan)
+        # std_silent = np.mean(df[df < df.quantile(.99)])
+        # (3) Sampling. median of means
+        means = []
+        n = 50  # no of chunk
+        chunk_size = len(rolstd_nonan)/n
+        for i in range(n):
+            means.append(np.mean(rolstd_nonan[i:i+chunk_size]))
+        std_silent = np.median(means)
+        return std_silent
 
     def slice_window(self, window, l=0):
         """
