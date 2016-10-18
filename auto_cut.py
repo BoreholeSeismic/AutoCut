@@ -2,7 +2,9 @@ import scipy.io
 import numpy as np
 import datetime
 from copy import deepcopy
-
+import logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 from lib import *
 
 class TraceInfo(object):
@@ -37,31 +39,34 @@ class AutoCut(object):
         if file_name is not None:
             self.filename = file_name
             self.traces, self.traces_info = self.read_matfile(file_name)
+            self.traces['traceData'] = self.traces['traceData'].astype('f8')
             window = self.get_signal_window(self.traces_info, self.traces['traceData'])
-            start, end = self.slice_window(window)
-            self.save_matfile(start, end, self.traces_info.datetime, self.traces)
+            segments = self.slice_multi_window(window)
+            self.save_multi_matfiles(segments, self.traces_info.datetime, self.traces)
         else:  # TODO support multiple files
             raise ValueError('need a filename')
-        print('Cut Done!')
+        logger.info('Cut Done!')
 
     def read_matfile(self, file_name):
+        logger.info('Reading mat file... ')
         traces = scipy.io.loadmat(self.input_dir_path+'/'+file_name)
 
-        noRec = traces['headerData']['noRec'][0][0][0][0]
-        noTrace = traces['headerData']['noTrace'][0][0][0][0]
-        noWell = traces['headerData']['childHeaders'][0][0].shape[1]
-        noSample = traces['headerData']['noSample'][0][0][0][0]
+        noRec = int(traces['headerData']['noRec'][0][0][0][0])
+        noTrace = int(traces['headerData']['noTrace'][0][0][0][0])
+        noWell = int(traces['headerData']['childHeaders'][0][0].shape[1])
+        noSample = int(traces['headerData']['noSample'][0][0][0][0])
         if noSample < 500:
             raise ValueError('trace noSample too short. ')
         date_str = traces['headerData']['acquisition'][0][0][0][0][0][0]
         time_str = traces['headerData']['acquisition'][0][0][0][0][1][0]
         secondFraction_str = traces['headerData']['acquisition'][0][0][0][0][2][0]
-        nanoSecond = traces['headerData']['acquisition'][0][0][0][0][3][0][0]
+        nanoSecond = int(traces['headerData']['acquisition'][0][0][0][0][3][0][0])
         dt = self.get_datetime(date_str, time_str, secondFraction_str, nanoSecond)
         traces_info = TraceInfo(noRec, noTrace, noWell, noSample, dt, nanoSecond)
         return traces, traces_info
 
     def get_signal_window(self, traces_info, data):
+        logger.info('Calculating trigger points... ')
         # Core logic! Any std larger than std of silent time is a signal.
         trigger_windows = []
         # single trace trigger detection. trigger_windows[noTrace][list_pos] stores triggered positions
@@ -94,20 +99,47 @@ class AutoCut(object):
         signal_window.sort()
         return signal_window
 
-    def slice_window(self, window):
-        # TODO support multiple cuts in a trace batch
-        info = self.traces_info
-        l = 0
+    def slice_window(self, window, l=0):
+        """
+        :return: right boundary of one cut
+        """
         r = l
         step = 30
         while r+step < len(window) and window[r+step] - window[r] < step*1.1:
             r += step
 
-        l_cut = max(0, window[l] - 800)
-        r_cut = min(info.noSample - 1, window[r] + 800)
-        return l_cut, r_cut
+        # l_cut = max(0, window[l] - 800)
+        # r_cut = min(info.noSample - 1, window[r] + 800)
+        return r
 
-    def save_matfile(self, start_pos, end_pos, old_date_time, old_traces):
+    def slice_multi_window(self, window, l=0):
+        """
+        :return: list of start and end index
+        """
+        logger.info('Slicing into multiple event windows')
+        info = self.traces_info
+        step = 30
+        traces_cuts = []
+        while l < len(window):
+            r = self.slice_window(window, l)
+
+            if l < r:
+                l_cut = max(0, window[l] - 800)
+                r_cut = min(info.noSample - 1, window[r] + 800)
+                traces_cuts.append((l_cut, r_cut))
+
+            l = r + step
+
+        logger.debug('Event Windows:'+str(traces_cuts))
+        return traces_cuts
+
+    def save_multi_matfiles(self, segments, old_date_time, old_traces):
+        logger.info('Saving into mat files...')
+        for segment in segments:
+            self.save_matfile(segment, old_date_time, old_traces)
+
+    def save_matfile(self, segment, old_date_time, old_traces):
+        start_pos, end_pos = segment
         dt_delta = datetime.timedelta(microseconds=start_pos * 250)
         new_dt = old_date_time + dt_delta
         short_traces = deepcopy(old_traces)
