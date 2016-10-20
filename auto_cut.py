@@ -2,10 +2,12 @@ import scipy.io
 import numpy as np
 import datetime
 from copy import deepcopy
+import os
+import pandas as pd
 import logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
-from lib import *
+from lib import getFileName
 
 class TraceInfo(object):
     """
@@ -27,29 +29,47 @@ class AutoCut(object):
     def __init__(self):
         self.traces_info = None
         self.traces = None
-        self.input_dir_path = None
-        self.out_dir_path = None
-        self.filename = None
+        self.input_path = None
+        self.output_path = None
 
     def cut(self, file_name=None):
         """
         if file_name provided, only cut this file
-        else cut all file in the directory
+        else recursively cut all files in the directory
         """
         if file_name is not None:
-            self.filename = file_name
-            self.traces, self.traces_info = self.read_matfile(file_name)
-            self.traces['traceData'] = self.traces['traceData'].astype('f8')
-            window = self.get_signal_window(self.traces_info, self.traces['traceData'])
-            segments = self.slice_multi_window(window)
-            self.save_multi_matfiles(segments, self.traces_info.datetime, self.traces)
-        else:  # TODO support multiple files
-            raise ValueError('need a filename')
+            # self.filename = file_name
+            self.cut_single_matfile(self.input_path, file_name)
+        else:
+            for path, subdirs, files in os.walk(self.input_path):
+                for file_name in files:
+                    self.cut_single_matfile(path, file_name)
+
         logger.info('Cut Done!')
 
-    def read_matfile(self, file_name):
-        logger.info('Reading mat file... ')
-        traces = scipy.io.loadmat(self.input_dir_path+'/'+file_name)
+    def cut_single_matfile(self, input_path, file_name):
+        res = self.read_matfile(input_path + '/' + file_name)
+        if res is None:
+            return
+        self.traces, self.traces_info = res
+        self.traces['traceData'] = self.traces['traceData'].astype('f8')
+        window = self.get_signal_window(self.traces_info, self.traces['traceData'])
+        segments = self.slice_multi_window(window)
+        self.save_multi_matfiles(segments, self.traces_info.datetime, self.traces, file_name)
+
+    def read_matfile(self, file_path):
+        """
+        :return: if .mat file, return data; otherwise return None
+        """
+        filename, file_ext = os.path.splitext(file_path)
+        if file_ext != '.mat':
+            logger.debug('Not a mat file: %s' % file_path)
+            return
+        # if filename.split('_')[-1] != 'trace3C':
+        #     logger.debug('mat file wrong name format (expecting ends with trace3C): %s' % file_path)
+        #     return
+        logger.info('Reading mat file %s' % file_path)
+        traces = scipy.io.loadmat(file_path)
 
         noRec = int(traces['headerData']['noRec'][0][0][0][0])
         noTrace = int(traces['headerData']['noTrace'][0][0][0][0])
@@ -83,7 +103,7 @@ class AutoCut(object):
                 no_trace = i_well * traces_info.noTrace / traces_info.noWell + j_trace
                 if len(trigger_windows[no_trace]) > 1:
                     count += 1
-            if count < 0.7 * traces_info.noTrace / traces_info.noWell:
+            if count < 0.5 * traces_info.noTrace / traces_info.noWell:
                 # remove the noise
                 for j_trace in range(traces_info.noTrace / traces_info.noWell):
                     no_trace = i_well * traces_info.noTrace / traces_info.noWell + j_trace
@@ -100,7 +120,7 @@ class AutoCut(object):
     def get_std_silent(self, rolstd):
         rolstd_nonan = rolstd[~np.isnan(rolstd)]
         # (1) naive method
-        std_silent = np.mean(rolstd_nonan[:400])
+        # std_silent = np.mean(rolstd_nonan[:400])
         # (2) discard the top 1%. But not accurate.
         # df = pd.Series(rolstd_nonan)
         # std_silent = np.mean(df[df < df.quantile(.99)])
@@ -122,8 +142,6 @@ class AutoCut(object):
         while r+step < len(window) and window[r+step] - window[r] < step*1.1:
             r += step
 
-        # l_cut = max(0, window[l] - 800)
-        # r_cut = min(info.noSample - 1, window[r] + 800)
         return r
 
     def slice_multi_window(self, window, l=0):
@@ -147,12 +165,12 @@ class AutoCut(object):
         logger.debug('Event Windows:'+str(traces_cuts))
         return traces_cuts
 
-    def save_multi_matfiles(self, segments, old_date_time, old_traces):
+    def save_multi_matfiles(self, segments, old_date_time, old_traces, old_file_name):
         logger.info('Saving into mat files...')
         for segment in segments:
-            self.save_matfile(segment, old_date_time, old_traces)
+            self.save_matfile(segment, old_date_time, old_traces, old_file_name)
 
-    def save_matfile(self, segment, old_date_time, old_traces):
+    def save_matfile(self, segment, old_date_time, old_traces, old_file_name):
         start_pos, end_pos = segment
         dt_delta = datetime.timedelta(microseconds=start_pos * 250)
         new_dt = old_date_time + dt_delta
@@ -167,25 +185,40 @@ class AutoCut(object):
         new_nanoSecond = (new_dt.microsecond % 100000) * 1000 + self.traces_info.nanoSecond % 1000
         short_traces['headerData']['acquisition'][0][0][0][0][3][0][0] = new_nanoSecond
         # edit filename
-        new_filename = getFileName(self.filename, new_dt)
+        new_filename = getFileName(old_file_name, new_dt)
         short_traces['headerData']['fileName'][0][0][0] = new_filename
         # slice data
         new_data = old_traces['traceData'][start_pos: end_pos, :]
         short_traces['traceData'] = new_data
-        new_stg_file_name = getPathName(self.filename, new_dt)
-        scipy.io.savemat(self.out_dir_path+'/'+new_stg_file_name, {'headerData': short_traces['headerData'], 'traceData': short_traces['traceData'], 'auxData': short_traces['auxData']}, do_compression=True, format='5')
+        scipy.io.savemat(self.output_path + '/' + new_filename, {'headerData': short_traces['headerData'], 'traceData': short_traces['traceData'], 'auxData': short_traces['auxData']}, do_compression=True, format='5')
 
-    def set_input_dir(self, dir_path):
-        self.input_dir_path = dir_path
-
-    def set_output_dir(self, out_dir_path=None):
+    def set_input_dir(self, dir_name=None):
         """
-        default output dir is the same as input dir
+        default input path is './input'
         """
-        if out_dir_path is None:
-            self.out_dir_path = self.input_dir_path
+        if dir_name is None:
+            self.set_input_path(os.getcwd() + '/input')
         else:
-            self.out_dir_path = out_dir_path
+            self.set_input_path(os.getcwd()+'/'+dir_name)
+
+    def set_output_dir(self, dir_name=None):
+        """
+        default output path is './output'
+        """
+        if dir_name is None:
+            self.set_output_path(os.getcwd() + '/output')
+        else:
+            self.set_output_path(os.getcwd() + '/' + dir_name)
+
+    def set_input_path(self, input_path):
+        if input_path[0] != '/':
+            raise ValueError('need absolute input path!')
+        self.input_path = input_path
+
+    def set_output_path(self, output_path):
+        if output_path[0] != '/':
+            raise ValueError('need absolute output path!')
+        self.output_path = output_path
 
     def get_datetime(self, date_str, time_str, secondFraction_str, nanoSecond):
         month, day, year = date_str.split('/')
