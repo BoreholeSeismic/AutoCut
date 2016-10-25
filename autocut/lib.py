@@ -1,5 +1,5 @@
-from matplotlib import pyplot as plt
-import pandas as pd
+# from matplotlib import pyplot as plt
+# import pandas as pd
 import os
 
 def getFileName(old_file_name, dt):
@@ -24,23 +24,23 @@ def getFileName(old_file_name, dt):
     new_file_name = filename+file_ext
     return new_file_name
 
-
-# for plotting
-def rolling_std(timeseries, window=1000):
-    # Determing rolling statistics
-    rolmean = pd.rolling_mean(timeseries, window=window)
-    rolstd = pd.rolling_std(timeseries, window=window)
-
-    # Plot rolling statistics:
-    orig = plt.plot(timeseries, color='blue', label='Original')
-    mean = plt.plot(rolmean, color='black', label='Rolling Mean')
-    std = plt.plot(rolstd, color='red', label='Rolling Std')
-    plt.legend(loc='best')
-    plt.title('Rolling Standard Deviation')
-    plt.show(block=False)
-
-# for plotting
-def plot3C(timeseries, i_rec):
-    plt.plot(timeseries['traceData'][:, i_rec * 3], color='red')
-    plt.plot(timeseries['traceData'][:, i_rec * 3 + 1], color='gray')
-    plt.plot(timeseries['traceData'][:, i_rec * 3 + 2], color='blue')
+#
+# # for plotting
+# def rolling_std(timeseries, window=1000):
+#     # Determing rolling statistics
+#     rolmean = pd.rolling_mean(timeseries, window=window)
+#     rolstd = pd.rolling_std(timeseries, window=window)
+#
+#     # Plot rolling statistics:
+#     orig = plt.plot(timeseries, color='blue', label='Original')
+#     mean = plt.plot(rolmean, color='black', label='Rolling Mean')
+#     std = plt.plot(rolstd, color='red', label='Rolling Std')
+#     plt.legend(loc='best')
+#     plt.title('Rolling Standard Deviation')
+#     plt.show(block=False)
+#
+# # for plotting
+# def plot3C(timeseries, i_rec):
+#     plt.plot(timeseries['traceData'][:, i_rec * 3], color='red')
+#     plt.plot(timeseries['traceData'][:, i_rec * 3 + 1], color='gray')
+#     plt.plot(timeseries['traceData'][:, i_rec * 3 + 2], color='blue')

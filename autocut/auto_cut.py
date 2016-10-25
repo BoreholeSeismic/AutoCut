@@ -1,8 +1,13 @@
+"""autocut.auto_cut: provides entry point main()."""
+
+__version__ = "0.0.1"
+
+import sys
+import os
 import scipy.io
 import numpy as np
 import datetime
 from copy import deepcopy
-import os
 import pandas as pd
 import logging
 logging.basicConfig(level=logging.DEBUG)
@@ -213,11 +218,16 @@ class AutoCut(object):
     def set_input_path(self, input_path):
         if input_path[0] != '/':
             raise ValueError('need absolute input path!')
-        self.input_path = input_path
+        if os.path.exists(input_path) is False:
+            raise ValueError('Input path does not exists!')
+        else:
+            self.input_path = input_path
 
     def set_output_path(self, output_path):
         if output_path[0] != '/':
             raise ValueError('need absolute output path!')
+        if os.path.exists(output_path) is False:
+            raise ValueError('Output path does not exists!')
         self.output_path = output_path
 
     def get_datetime(self, date_str, time_str, secondFraction_str, nanoSecond):
@@ -226,3 +236,35 @@ class AutoCut(object):
         miliSecond = int(secondFraction_str)
         microSecond = int(nanoSecond / 1e3) % 1000
         return datetime.datetime(int(year), int(month), int(day), int(hour), int(minute), int(second), miliSecond * 1000 + microSecond)
+
+
+
+
+def main():
+    print("AutoCut utility for slicing long seismic traces into short events. ")
+    print("Executing AutoCut version %s" % __version__)
+    args = sys.argv[1:]
+    if len(args) < 2:
+        print("Example command: autocut input output")
+        print("First argument is input path, second argument is output path. ")
+        return
+
+    print("List of argument strings: %s" % args)
+    input = args[0]
+    output = args[1]
+
+    autocut = AutoCut()
+
+    if input[0] == '/':
+        autocut.set_input_path(input)
+    else:
+        autocut.set_input_dir(input)
+    if output[0] == '/':
+        autocut.set_output_path(output)
+    else:
+        autocut.set_output_dir(output)
+
+    autocut.cut()
+    print("AutoCut finished. ")
+    print("Input path %s" % autocut.input_path)
+    print("Output path %s" % autocut.output_path)
