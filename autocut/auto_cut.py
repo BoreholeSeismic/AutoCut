@@ -10,10 +10,10 @@ import datetime
 from copy import deepcopy
 import pandas as pd
 import warnings
+import argparse
 import colorlog
 from tqdm import tqdm
 import logging
-# logging.basicConfig(level=logging.DEBUG)
 logger = colorlog.getLogger("AutoCut")
 from lib import getFileName
 
@@ -33,6 +33,9 @@ class TraceInfo(object):
         self.nanoSecond = nanoSecond
 
 class TqdmHandler(logging.StreamHandler):
+    """
+    progressor bar
+    """
     def __init__(self):
         logging.StreamHandler.__init__(self)
 
@@ -62,8 +65,7 @@ class AutoCut(object):
             for path, subdirs, files in os.walk(self.input_path):
                 with tqdm(total=100) as pbar:
                     for i, file_name in enumerate(files):
-                        # logger.debug("Cutting Progress: " + str((i+1)*100/len(files)))
-                        pbar.update(100.0/len(files))
+                        pbar.update(100.0/len(files))  # update progress bar
                         self.cut_single_matfile(path, file_name)
 
 
@@ -83,7 +85,7 @@ class AutoCut(object):
         """
         filename, file_ext = os.path.splitext(file_path)
         if file_ext != '.mat':
-            logger.critical('Not a mat file: %s. File skipped. ' % file_path)
+            logger.warning('Not a mat file: %s. File skipped. ' % file_path)
             return
 
         logger.info('Reading mat file %s' % file_path)
@@ -144,8 +146,8 @@ class AutoCut(object):
         # std_silent = np.mean(df[df < df.quantile(.99)])
         # (3) Sampling. median of means
         means = []
-        n = 50  # no of chunk
-        chunk_size = len(rolstd_nonan)/n
+        chunk_size = 400
+        n = len(rolstd_nonan)/chunk_size
         for i in range(n):
             means.append(np.mean(rolstd_nonan[i:i+chunk_size]))
         std_silent = np.median(means)
@@ -254,25 +256,29 @@ class AutoCut(object):
 
 
 def main():
-    print("AutoCut utility for slicing long seismic traces into short events. ")
-    print("Executing AutoCut version %s" % __version__)
-    args = sys.argv[1:]
+    parser = argparse.ArgumentParser(description='AutoCut utility for slicing long seismic traces into short events. Executing AutoCut version %s' % __version__)
+    parser.add_argument('-i', '--input', required=True, help='input absolute path')
+    parser.add_argument('-o', '--output', required=True, help='output absolute path')
+    parser.add_argument('-d', '--debug', dest='debug', nargs='?', const=True, default=False, help='debug mode (default: not debug)')
+    args = vars(parser.parse_args())
+
     if len(args) < 2:
         print("Example command: autocut input output")
         print("First argument is input path, second argument is output path. (All paths needs to be absolute path. )")
         return
 
     print("List of argument strings: %s" % args)
-    input = args[0]
-    output = args[1]
+    input = args['input']
+    output = args['output']
+    debug = args['debug']
 
     assert input[0] == '/', "input path should be absolute. "
     assert output[0] == '/', "output path should be absolute. "
 
-    # if len(args) >= 3:
-    #     is_debug = args[2]
+    logger.setLevel(logging.WARNING)
+    if debug:
+        logger.setLevel(logging.DEBUG)
 
-    logger.setLevel(logging.DEBUG)
     handler = TqdmHandler()
     handler.setFormatter(colorlog.ColoredFormatter(
         '%(log_color)s%(name)s | %(asctime)s | %(levelname)s | %(message)s',
