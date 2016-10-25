@@ -1,6 +1,6 @@
 """autocut.auto_cut: provides entry point main()."""
 
-__version__ = "0.0.1"
+__version__ = "0.0.3"
 
 import sys
 import os
@@ -9,10 +9,16 @@ import numpy as np
 import datetime
 from copy import deepcopy
 import pandas as pd
+import warnings
+import colorlog
+from tqdm import tqdm
 import logging
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger(__name__)
+# logging.basicConfig(level=logging.DEBUG)
+logger = colorlog.getLogger("AutoCut")
 from lib import getFileName
+
+
+
 
 class TraceInfo(object):
     """
@@ -25,6 +31,14 @@ class TraceInfo(object):
         self.noSample = noSample
         self.datetime = dt
         self.nanoSecond = nanoSecond
+
+class TqdmHandler(logging.StreamHandler):
+    def __init__(self):
+        logging.StreamHandler.__init__(self)
+
+    def emit(self, record):
+        msg = self.format(record)
+        tqdm.write(msg)
 
 
 class AutoCut(object):
@@ -43,14 +57,15 @@ class AutoCut(object):
         else recursively cut all files in the directory
         """
         if file_name is not None:
-            # self.filename = file_name
             self.cut_single_matfile(self.input_path, file_name)
         else:
             for path, subdirs, files in os.walk(self.input_path):
-                for file_name in files:
-                    self.cut_single_matfile(path, file_name)
+                with tqdm(total=100) as pbar:
+                    for i, file_name in enumerate(files):
+                        # logger.debug("Cutting Progress: " + str((i+1)*100/len(files)))
+                        pbar.update(100.0/len(files))
+                        self.cut_single_matfile(path, file_name)
 
-        logger.info('Cut Done!')
 
     def cut_single_matfile(self, input_path, file_name):
         res = self.read_matfile(input_path + '/' + file_name)
@@ -68,11 +83,9 @@ class AutoCut(object):
         """
         filename, file_ext = os.path.splitext(file_path)
         if file_ext != '.mat':
-            logger.debug('Not a mat file: %s' % file_path)
+            logger.critical('Not a mat file: %s. File skipped. ' % file_path)
             return
-        # if filename.split('_')[-1] != 'trace3C':
-        #     logger.debug('mat file wrong name format (expecting ends with trace3C): %s' % file_path)
-        #     return
+
         logger.info('Reading mat file %s' % file_path)
         traces = scipy.io.loadmat(file_path)
 
@@ -246,25 +259,43 @@ def main():
     args = sys.argv[1:]
     if len(args) < 2:
         print("Example command: autocut input output")
-        print("First argument is input path, second argument is output path. ")
+        print("First argument is input path, second argument is output path. (All paths needs to be absolute path. )")
         return
 
     print("List of argument strings: %s" % args)
     input = args[0]
     output = args[1]
 
+    assert input[0] == '/', "input path should be absolute. "
+    assert output[0] == '/', "output path should be absolute. "
+
+    # if len(args) >= 3:
+    #     is_debug = args[2]
+
+    logger.setLevel(logging.DEBUG)
+    handler = TqdmHandler()
+    handler.setFormatter(colorlog.ColoredFormatter(
+        '%(log_color)s%(name)s | %(asctime)s | %(levelname)s | %(message)s',
+        datefmt='%Y-%d-%d %H:%M:%S',
+        log_colors={
+            'DEBUG': 'cyan',
+            'INFO': 'white',
+            'SUCCESS:': 'green',
+            'WARNING': 'yellow',
+            'ERROR': 'red',
+            'CRITICAL': 'red,bg_white'}, ))
+
+    logger.addHandler(handler)
+
+    warnings.filterwarnings("ignore", category=FutureWarning)
+
     autocut = AutoCut()
 
-    if input[0] == '/':
-        autocut.set_input_path(input)
-    else:
-        autocut.set_input_dir(input)
-    if output[0] == '/':
-        autocut.set_output_path(output)
-    else:
-        autocut.set_output_dir(output)
+    autocut.set_input_path(input)
+    autocut.set_output_path(output)
+
+    print("Input path %s" % autocut.input_path)
+    print("Output path %s" % autocut.output_path)
 
     autocut.cut()
     print("AutoCut finished. ")
-    print("Input path %s" % autocut.input_path)
-    print("Output path %s" % autocut.output_path)
