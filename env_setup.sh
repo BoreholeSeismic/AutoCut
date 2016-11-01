@@ -7,4 +7,4 @@ conda update conda
 conda install -y scipy pandas
 conda install -y -c conda-forge colorlog=2.7.0
 conda install -y -c conda-forge tqdm=4.8.4
-conda install -y -c siruix autocut=0.0.3
+conda install -y -c siruix autocut

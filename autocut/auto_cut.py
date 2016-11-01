@@ -1,6 +1,6 @@
 """autocut.auto_cut: provides entry point main()."""
 
-__version__ = "0.0.3"
+__version__ = "0.0.4"
 
 import sys
 import os
@@ -64,12 +64,14 @@ class AutoCut(object):
         else:
             for path, subdirs, files in os.walk(self.input_path):
                 with tqdm(total=100) as pbar:
+                    path_diff = path[len(self.input_path):]
+                    out_path = self.output_path + path_diff
                     for i, file_name in enumerate(files):
                         pbar.update(100.0/len(files))  # update progress bar
-                        self.cut_single_matfile(path, file_name)
+                        self.cut_single_matfile(path, file_name, out_path)
 
 
-    def cut_single_matfile(self, input_path, file_name):
+    def cut_single_matfile(self, input_path, file_name, output_path):
         res = self.read_matfile(input_path + '/' + file_name)
         if res is None:
             return
@@ -77,7 +79,7 @@ class AutoCut(object):
         self.traces['traceData'] = self.traces['traceData'].astype('f8')
         window = self.get_signal_window(self.traces_info, self.traces['traceData'])
         segments = self.slice_multi_window(window)
-        self.save_multi_matfiles(segments, self.traces_info.datetime, self.traces, file_name)
+        self.save_multi_matfiles(segments, self.traces_info.datetime, self.traces, file_name, output_path)
 
     def read_matfile(self, file_path):
         """
@@ -185,12 +187,14 @@ class AutoCut(object):
         logger.debug('Event Windows:'+str(traces_cuts))
         return traces_cuts
 
-    def save_multi_matfiles(self, segments, old_date_time, old_traces, old_file_name):
+    def save_multi_matfiles(self, segments, old_date_time, old_traces, old_file_name, output_path):
         logger.info('Saving into mat files...')
+        if not os.path.exists(output_path):
+            os.makedirs(output_path)
         for segment in segments:
-            self.save_matfile(segment, old_date_time, old_traces, old_file_name)
+            self.save_matfile(segment, old_date_time, old_traces, old_file_name, output_path)
 
-    def save_matfile(self, segment, old_date_time, old_traces, old_file_name):
+    def save_matfile(self, segment, old_date_time, old_traces, old_file_name, output_path):
         start_pos, end_pos = segment
         dt_delta = datetime.timedelta(microseconds=start_pos * 250)
         new_dt = old_date_time + dt_delta
@@ -210,7 +214,7 @@ class AutoCut(object):
         # slice data
         new_data = old_traces['traceData'][start_pos: end_pos, :]
         short_traces['traceData'] = new_data
-        scipy.io.savemat(self.output_path + '/' + new_filename, {'headerData': short_traces['headerData'], 'traceData': short_traces['traceData'], 'auxData': short_traces['auxData']}, do_compression=True, format='5')
+        scipy.io.savemat(output_path + '/' + new_filename, {'headerData': short_traces['headerData'], 'traceData': short_traces['traceData'], 'auxData': short_traces['auxData']}, do_compression=True, format='5')
 
     def set_input_dir(self, dir_name=None):
         """
